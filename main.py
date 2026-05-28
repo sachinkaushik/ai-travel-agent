@@ -1,9 +1,3 @@
-'''
-# pip install langgraph langchain langchain-openai langchain-groq langchain-community langchain-tavily psycopg[binary] psycopg_pool python-dotenv tavily-python pip install requests streamlit
-
-# install PostgresSql and create database
-CREATE DATABASE langgraph_memory;  ( or open pgadmin4 and create database there )
-'''
 # LangGraph Multi-Agent Travel Booking System with Long-Term Memory
 
 # main.py
@@ -11,8 +5,10 @@ CREATE DATABASE langgraph_memory;  ( or open pgadmin4 and create database there 
 import os
 from typing import TypedDict, Annotated
 import operator
+from contextlib import contextmanager
 
 import psycopg
+from psycopg_pool import ConnectionPool
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages import (
@@ -43,7 +39,7 @@ class TravelState(TypedDict):
     flight_results: str
     hotel_results: str
     itinerary: str
-    llm_calls: int
+    llm_calls: Annotated[int, operator.add]
 
 # Flight Agent
 def flight_agent(state: TravelState):
@@ -131,19 +127,25 @@ graph.add_node("hotel_agent", hotel_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_agent)
 
+# Parallel fan-out: flight + hotel run concurrently
 graph.add_edge(START, "flight_agent")
-graph.add_edge("flight_agent", "hotel_agent")
+graph.add_edge(START, "hotel_agent")
+graph.add_edge("flight_agent", "itinerary_agent")
 graph.add_edge("hotel_agent", "itinerary_agent")
 graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END)
 
 
-# Persistent connection so both CLI and Streamlit can share the compiled app
-_conn = psycopg.connect(DATABASE_URL)
-checkpointer = PostgresSaver(_conn)
-checkpointer.setup()
+def get_app():
+    """Create a compiled app with a managed DB connection."""
+    conn = psycopg.connect(DATABASE_URL, autocommit=True)
+    checkpointer = PostgresSaver(conn)
+    checkpointer.setup()
+    return graph.compile(checkpointer=checkpointer), conn
 
-app = graph.compile(checkpointer=checkpointer)
+
+# Module-level app for import by frontend (connection managed via get_app)
+app, _conn = get_app()
 
 
 if __name__ == "__main__":
@@ -153,23 +155,29 @@ if __name__ == "__main__":
         }
     }
 
-    user_input = input("Enter travel request: ")
+    user_input = input("Enter travel request: ").strip()
+    if not user_input:
+        print("Error: Please provide a travel request.")
+        _conn.close()
+        exit(1)
 
-    result = app.invoke(
-        {
-            "messages": [
-                HumanMessage(content=user_input)
-            ],
-            "user_query": user_input,
-            "flight_results": "",
-            "hotel_results": "",
-            "itinerary": "",
-            "llm_calls": 0
-        },
-        config=config
-    )
+    try:
+        result = app.invoke(
+            {
+                "messages": [
+                    HumanMessage(content=user_input)
+                ],
+                "user_query": user_input,
+                "flight_results": "",
+                "hotel_results": "",
+                "itinerary": "",
+                "llm_calls": 0
+            },
+            config=config
+        )
 
-    print("\nFINAL RESPONSE:\n")
-
-    for msg in result["messages"]:
-        print(msg.content)
+        print("\nFINAL RESPONSE:\n")
+        for msg in result["messages"]:
+            print(msg.content)
+    finally:
+        _conn.close()

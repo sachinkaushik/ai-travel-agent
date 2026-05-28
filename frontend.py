@@ -1,4 +1,5 @@
 import os
+import html
 import streamlit as st
 from datetime import datetime
 from langchain_core.messages import HumanMessage
@@ -302,7 +303,7 @@ div[data-testid="stDownloadButton"] > button {
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("<div class='sidebar-title'>🌍 AI Travel Planner</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-title'>🌍 SACHIN-AI Travel Planner</div>", unsafe_allow_html=True)
     st.markdown("---")
 
     thread_id = st.text_input("👤 User ID", value="sachin_user",
@@ -324,7 +325,7 @@ st.markdown("""
          alt="airplane above clouds"/>
     <div class="hero-content">
         <div class="hero-badge">✦ Multi-Agent AI System</div>
-        <div class="hero-title">✈️ AI Travel Booking System</div>
+        <div class="hero-title">✈️ SACHIN-AI Travel Booking System</div>
         <div class="hero-sub">Four specialized agents work together — searching flights, hotels, building an itinerary, and delivering your perfect trip plan.</div>
     </div>
 </div>
@@ -445,7 +446,8 @@ if generate:
         if collected["final_response"]:
             st.markdown("<div class='sec-head'><span>🧠 Final Travel Plan</span></div>",
                         unsafe_allow_html=True)
-            st.markdown(f"<div class='final-card'>{collected['final_response']}</div>",
+            safe_response = html.escape(collected["final_response"])
+            st.markdown(f"<div class='final-card'>{safe_response}</div>",
                         unsafe_allow_html=True)
 
         # Save
